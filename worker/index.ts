@@ -2,7 +2,8 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { checkAnswer, type Answer } from '../shared/checker';
 import { generateQuestion, type Difficulty, type Mode, type PublicQuestion, type Solution } from '../shared/questions';
 import { validPoint, validPolygon, validTransform } from '../shared/geometry';
-interface Env { DB:D1Database; STORAGE:R2Bucket; ASSETS:Fetcher; DEPLOY_ENV:string; DEV_AUTH_BYPASS?:string; ACCESS_TEAM_DOMAIN:string; ACCESS_AUD:string; ALLOWED_EMAIL:string }
+interface Env { DB:D1Database; ASSETS:Fetcher; DEPLOY_ENV:string; DEV_AUTH_BYPASS?:string; ACCESS_TEAM_DOMAIN:string; ACCESS_AUD:string; ALLOWED_EMAIL:string }
+const FILE_CHUNK_BYTES=512*1024;
 let jwksCache:{url:string;set:ReturnType<typeof createRemoteJWKSet>}|null=null;
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const bad=(message:string,status=400)=>json({error:message},status);
@@ -149,10 +150,12 @@ async function api(req:Request,env:Env,url:URL):Promise<Response>{
   if(!(file instanceof File)||!['diagram','reference','report','solution'].includes(String(kind)))return bad('Invalid file');
   const allowed=['image/png','image/jpeg','image/webp','image/svg+xml','application/pdf'];
   if(!allowed.includes(file.type)||file.size>10*1024*1024||file.size===0)return bad('Use a PNG, JPEG, WebP, SVG, or PDF under 10 MB');
-  const id=crypto.randomUUID(),key=`private/${id}`,filename=file.name.slice(0,120);
-  await env.STORAGE.put(key,file.stream(),{httpMetadata:{contentType:file.type}});
-  try{await env.DB.prepare('INSERT INTO stored_files(id,object_key,filename,content_type,size_bytes,kind) VALUES(?,?,?,?,?,?)').bind(id,key,filename,file.type,file.size,String(kind)).run();}
-  catch(e){await env.STORAGE.delete(key);throw e;}
+  const id=crypto.randomUUID(),filename=file.name.slice(0,120),bytes=new Uint8Array(await file.arrayBuffer());
+  const writes=[env.DB.prepare('INSERT INTO stored_files(id,object_key,filename,content_type,size_bytes,kind) VALUES(?,?,?,?,?,?)').bind(id,`d1/${id}`,filename,file.type,bytes.length,String(kind))];
+  for(let offset=0,index=0;offset<bytes.length;offset+=FILE_CHUNK_BYTES,index++){
+   writes.push(env.DB.prepare('INSERT INTO stored_file_chunks(file_id,chunk_index,data) VALUES(?,?,?)').bind(id,index,bytes.subarray(offset,offset+FILE_CHUNK_BYTES)));
+  }
+  await env.DB.batch(writes);
   return json({id,filename,kind},201);
  }
  if(path==='/api/files'&&method==='GET'){
@@ -161,8 +164,11 @@ async function api(req:Request,env:Env,url:URL):Promise<Response>{
  const fileMatch=/^\/api\/files\/([a-f0-9-]{36})$/.exec(path);
  if(fileMatch&&method==='GET'){
   const row=await env.DB.prepare('SELECT * FROM stored_files WHERE id=?').bind(fileMatch[1]).first<Record<string,unknown>>();if(!row)return bad('File not found',404);
-  const object=await env.STORAGE.get(String(row.object_key));if(!object)return bad('File missing',404);
-  return new Response(object.body,{headers:{'content-type':String(row.content_type),'content-disposition':`inline; filename="${String(row.filename).replace(/["\\]/g,'_')}"`,'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':'sandbox'}});
+  const chunks=await env.DB.prepare('SELECT chunk_index,data FROM stored_file_chunks WHERE file_id=? ORDER BY chunk_index').bind(fileMatch[1]).all<{chunk_index:number;data:number[]}>();
+  const bytes=new Uint8Array(Number(row.size_bytes));let offset=0;
+  for(const chunk of chunks.results){if(chunk.chunk_index!==Math.floor(offset/FILE_CHUNK_BYTES)||!Array.isArray(chunk.data)||offset+chunk.data.length>bytes.length)return bad('File is incomplete',500);bytes.set(chunk.data,offset);offset+=chunk.data.length;}
+  if(offset!==bytes.length)return bad('File is incomplete',500);
+  return new Response(bytes,{headers:{'content-type':String(row.content_type),'content-disposition':`inline; filename="${String(row.filename).replace(/["\\]/g,'_')}"`,'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':'sandbox'}});
  }
  if(path==='/api/progress/reset'&&method==='POST'){
   const x=await body(req);if(x.confirm!=='RESET')return bad('Type RESET to confirm');

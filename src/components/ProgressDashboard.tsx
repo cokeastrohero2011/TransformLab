@@ -2,8 +2,8 @@ import {useState} from 'react';
 import {useMutation,useQuery,useQueryClient} from '@tanstack/react-query';
 import {BarChart3,CheckCircle2,Flame,Target,Trash2,RotateCcw} from 'lucide-react';
 import {api,type Progress} from '../lib/api';
-import {FileLibrary} from './FileLibrary';
 import {Preferences} from './Preferences';
+import {FileLibrary} from './FileLibrary';
 import {Button,Card,Status} from './ui';
 function Metric({icon,label,value,accent='teal'}:{icon:React.ReactNode;label:string;value:string|number;accent?:string}){return <Card className="p-5"><div className="mb-5 inline-flex rounded-xl bg-teal/10 p-2.5 text-teal">{icon}</div><p className="text-3xl font-extrabold tracking-tight text-ink">{value}</p><p className="mt-1 text-sm font-medium text-slate-500">{label}</p></Card>}
 export function ProgressDashboard({compact=false,onNavigate}:{compact?:boolean;onNavigate?:(s:string,retryId?:string)=>void}){const qc=useQueryClient();const progress=useQuery({queryKey:['progress'],queryFn:api.progress});const [confirm,setConfirm]=useState('');const [showReset,setShowReset]=useState(false);const reset=useMutation({mutationFn:api.reset,onSuccess:()=>{qc.invalidateQueries({queryKey:['progress']});qc.invalidateQueries({queryKey:['history']});setShowReset(false);setConfirm('');}});const p=progress.data;
