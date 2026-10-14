@@ -150,7 +150,7 @@ async function api(req:Request,env:Env,url:URL):Promise<Response>{
   if(!(file instanceof File)||!['diagram','reference','report','solution'].includes(String(kind)))return bad('Invalid file');
   const allowed=['image/png','image/jpeg','image/webp','image/svg+xml','application/pdf'];
   if(!allowed.includes(file.type)||file.size>10*1024*1024||file.size===0)return bad('Use a PNG, JPEG, WebP, SVG, or PDF under 10 MB');
-  const id=crypto.randomUUID(),filename=file.name.slice(0,120),bytes=new Uint8Array(await file.arrayBuffer());
+  const id=crypto.randomUUID(),filename=file.name.slice(0,120).replace(/[\x00-\x1f\x7f"\\]/g,'_'),bytes=new Uint8Array(await file.arrayBuffer());
   const writes=[env.DB.prepare('INSERT INTO stored_files(id,object_key,filename,content_type,size_bytes,kind) VALUES(?,?,?,?,?,?)').bind(id,`d1/${id}`,filename,file.type,bytes.length,String(kind))];
   for(let offset=0,index=0;offset<bytes.length;offset+=FILE_CHUNK_BYTES,index++){
    writes.push(env.DB.prepare('INSERT INTO stored_file_chunks(file_id,chunk_index,data) VALUES(?,?,?)').bind(id,index,bytes.subarray(offset,offset+FILE_CHUNK_BYTES)));
@@ -164,9 +164,12 @@ async function api(req:Request,env:Env,url:URL):Promise<Response>{
  const fileMatch=/^\/api\/files\/([a-f0-9-]{36})$/.exec(path);
  if(fileMatch&&method==='GET'){
   const row=await env.DB.prepare('SELECT * FROM stored_files WHERE id=?').bind(fileMatch[1]).first<Record<string,unknown>>();if(!row)return bad('File not found',404);
-  const chunks=await env.DB.prepare('SELECT chunk_index,data FROM stored_file_chunks WHERE file_id=? ORDER BY chunk_index').bind(fileMatch[1]).all<{chunk_index:number;data:number[]}>();
   const bytes=new Uint8Array(Number(row.size_bytes));let offset=0;
-  for(const chunk of chunks.results){if(chunk.chunk_index!==Math.floor(offset/FILE_CHUNK_BYTES)||!Array.isArray(chunk.data)||offset+chunk.data.length>bytes.length)return bad('File is incomplete',500);bytes.set(chunk.data,offset);offset+=chunk.data.length;}
+  for(let index=0;index<Math.ceil(bytes.length/FILE_CHUNK_BYTES);index++){
+   const chunk=await env.DB.prepare('SELECT data FROM stored_file_chunks WHERE file_id=? AND chunk_index=?').bind(fileMatch[1],index).first<{data:number[]}>();
+   if(!chunk||!Array.isArray(chunk.data)||chunk.data.length!==Math.min(FILE_CHUNK_BYTES,bytes.length-offset))return bad('File is incomplete',500);
+   bytes.set(chunk.data,offset);offset+=chunk.data.length;
+  }
   if(offset!==bytes.length)return bad('File is incomplete',500);
   return new Response(bytes,{headers:{'content-type':String(row.content_type),'content-disposition':`inline; filename="${String(row.filename).replace(/["\\]/g,'_')}"`,'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':'sandbox'}});
  }
