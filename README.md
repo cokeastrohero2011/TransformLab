@@ -33,6 +33,6 @@ The Worker serves the app without authentication. Anyone with the URL can see or
 
 Migrations live in `migrations/`. Optional uploads are limited to 10 MB images or PDFs and are stored as 512 KB chunks in D1 rows, alongside their metadata. Cloudflare D1 limits individual BLOBs and rows to 2 MB. Structured progress is also in D1. The app uses TanStack Query for server state and refetches after saves.
 
-The sample draw exercise is available through **Draw → Part a/b/c**. Questions are original and generated from the transformation rules in syllabus section E7.1. The attached syllabus PDF stays in the project as the source reference.
+Draw questions use new triangles and quadrilaterals with randomized transformation parameters each time. Questions are original and generated from the transformation rules in syllabus section E7.1. The attached syllabus PDF stays in the project as the source reference.
 
 Official references: [Workers Static Assets](https://developers.cloudflare.com/workers/static-assets/) and [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/).

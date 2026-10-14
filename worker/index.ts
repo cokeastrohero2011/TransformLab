@@ -26,8 +26,8 @@ function validateMutation(req:Request):boolean{
  const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin)return false;
  return req.headers.get('x-transformlab-request')==='1';
 }
-async function createQuestion(env:Env,mode:Mode,difficulty:Difficulty,samplePart?:'a'|'b'|'c'){
- const generated=generateQuestion(mode,difficulty,undefined,samplePart);
+async function createQuestion(env:Env,mode:Mode,difficulty:Difficulty){
+ const generated=generateQuestion(mode,difficulty);
  await env.DB.prepare('INSERT INTO practice_questions(id,mode,difficulty,transformation_type,public_data,solution_data) VALUES(?,?,?,?,?,?)').bind(generated.question.id,generated.question.mode,difficulty,generated.question.type,JSON.stringify(generated.question),JSON.stringify(generated.solution)).run();
  return generated.question;
 }
@@ -36,9 +36,9 @@ async function api(req:Request,env:Env,url:URL):Promise<Response>{
  const path=url.pathname,method=req.method;
  if(path==='/api/health'&&method==='GET')return json({ok:true});
  if(path==='/api/question'&&method==='GET'){
-  const mode=url.searchParams.get('mode')||'identify',difficulty=url.searchParams.get('difficulty')||'mixed',part=url.searchParams.get('samplePart');
-  if(!isMode(mode)||!isDifficulty(difficulty)||part&&!['a','b','c'].includes(part))return bad('Invalid question options');
-  return json(await createQuestion(env,mode,difficulty,part as 'a'|'b'|'c'|undefined));
+  const mode=url.searchParams.get('mode')||'identify',difficulty=url.searchParams.get('difficulty')||'mixed';
+  if(!isMode(mode)||!isDifficulty(difficulty)||url.searchParams.has('samplePart'))return bad('Invalid question options');
+  return json(await createQuestion(env,mode,difficulty));
  }
  const retryMatch=/^\/api\/questions\/([a-f0-9-]{36})\/retry$/.exec(path);
  if(retryMatch&&method==='POST'){

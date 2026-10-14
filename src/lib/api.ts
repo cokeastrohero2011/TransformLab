@@ -12,7 +12,7 @@ async function request<T>(path:string,init?:RequestInit):Promise<T>{
 }
 const post=<T>(path:string,data:unknown)=>request<T>(path,{method:'POST',body:JSON.stringify(data)});
 export const api={
- question:(mode:Mode,difficulty:Difficulty,part?:'a'|'b'|'c')=>request<PublicQuestion>(`/api/question?mode=${mode}&difficulty=${difficulty}${part?`&samplePart=${part}`:''}`),
+ question:(mode:Mode,difficulty:Difficulty)=>request<PublicQuestion>(`/api/question?mode=${mode}&difficulty=${difficulty}`),
  solution:(id:string)=>request<Solution>(`/api/questions/${id}/solution`),
  retryQuestion:(id:string)=>post<PublicQuestion>(`/api/questions/${id}/retry`,{}),
  submit:(questionId:string,answer:Answer,timeSpentSeconds:number,idempotencyKey:string)=>post<AttemptResult>('/api/practice/submit',{questionId,answer,timeSpentSeconds,idempotencyKey}),
