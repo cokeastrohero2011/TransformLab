@@ -1,0 +1,4 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root{font-family:'DM Sans',sans-serif;color:#12233f;background:#f8f7f3;font-synthesis:none}body{margin:0}button,input,select{font:inherit}button{cursor:pointer}.font-display{font-family:Outfit,'DM Sans',sans-serif}.eyebrow{@apply text-[11px] font-bold uppercase tracking-[.18em] text-teal}.page-title{@apply mt-2 font-display text-3xl font-bold tracking-tight text-ink sm:text-4xl}.section-title{@apply font-display text-lg font-bold text-ink}.subtle{@apply mt-2 text-sm leading-relaxed text-slate-500}
