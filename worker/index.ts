@@ -1,10 +1,8 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { checkAnswer, type Answer } from '../shared/checker';
 import { generateQuestion, type Difficulty, type Mode, type PublicQuestion, type Solution } from '../shared/questions';
 import { validPoint, validPolygon, validTransform } from '../shared/geometry';
-interface Env { DB:D1Database; ASSETS:Fetcher; DEPLOY_ENV:string; DEV_AUTH_BYPASS?:string; ACCESS_TEAM_DOMAIN:string; ACCESS_AUD:string; ALLOWED_EMAIL:string }
+interface Env { DB:D1Database; ASSETS:Fetcher }
 const FILE_CHUNK_BYTES=512*1024;
-let jwksCache:{url:string;set:ReturnType<typeof createRemoteJWKSet>}|null=null;
 const json=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'}});
 const bad=(message:string,status=400)=>json({error:message},status);
 const parsed=(v:string)=>JSON.parse(v);
@@ -24,18 +22,6 @@ function validAnswer(a:unknown):a is Answer {
  return true;
 }
 async function body(req:Request){const ct=req.headers.get('content-type')||'';if(!ct.includes('application/json'))throw new Error('Expected JSON');const raw=await req.text();if(raw.length>20000)throw new Error('Request too large');return JSON.parse(raw) as Record<string,unknown>;}
-async function authorize(req:Request,env:Env):Promise<boolean>{
- const url=new URL(req.url);
- if(env.DEPLOY_ENV==='development'&&env.DEV_AUTH_BYPASS==='true'&&['localhost','127.0.0.1','::1'].includes(url.hostname))return true;
- if(!env.ACCESS_TEAM_DOMAIN||!env.ACCESS_AUD||!env.ALLOWED_EMAIL)return false;
- const token=req.headers.get('Cf-Access-Jwt-Assertion');if(!token)return false;
- try{
-  const issuer=`https://${env.ACCESS_TEAM_DOMAIN.replace(/^https?:\/\//,'').replace(/\/$/,'')}`;
-  const certsUrl=`${issuer}/cdn-cgi/access/certs`;if(!jwksCache||jwksCache.url!==certsUrl)jwksCache={url:certsUrl,set:createRemoteJWKSet(new URL(certsUrl))};const jwks=jwksCache.set;
-  const {payload}=await jwtVerify(token,jwks,{issuer,audience:env.ACCESS_AUD,algorithms:['RS256']});
-  return typeof payload.email==='string'&&payload.email.toLowerCase()===env.ALLOWED_EMAIL.toLowerCase();
- }catch{return false;}
-}
 function validateMutation(req:Request):boolean{
  const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin)return false;
  return req.headers.get('x-transformlab-request')==='1';
@@ -171,7 +157,7 @@ async function api(req:Request,env:Env,url:URL):Promise<Response>{
    bytes.set(chunk.data,offset);offset+=chunk.data.length;
   }
   if(offset!==bytes.length)return bad('File is incomplete',500);
-  return new Response(bytes,{headers:{'content-type':String(row.content_type),'content-disposition':`inline; filename="${String(row.filename).replace(/["\\]/g,'_')}"`,'cache-control':'private, no-store','x-content-type-options':'nosniff','content-security-policy':'sandbox'}});
+  return new Response(bytes,{headers:{'content-type':String(row.content_type),'content-disposition':`inline; filename="${String(row.filename).replace(/["\\]/g,'_')}"`,'cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':'sandbox'}});
  }
  if(path==='/api/progress/reset'&&method==='POST'){
   const x=await body(req);if(x.confirm!=='RESET')return bad('Type RESET to confirm');
@@ -188,7 +174,6 @@ async function examResults(env:Env,id:string){
 }
 export default {async fetch(req:Request,env:Env):Promise<Response>{
  try{
-  if(!(await authorize(req,env)))return bad('Access denied',403);
   const url=new URL(req.url);
   if(url.pathname.startsWith('/api/')){
    if(!['GET','HEAD'].includes(req.method)&&!validateMutation(req))return bad('Request origin check failed',403);
